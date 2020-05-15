@@ -1,5 +1,5 @@
 """
-Sample plugin
+Sample collector
 
 Exposed metrics:
 - sample_metric
@@ -19,8 +19,8 @@ sample = Gauge(
 )
 
 
-def run():
+def collect():
     """
-    Collector
+    Sample collector
     """
     sample.labels(mylabel="test").set(config.scrape_timeout_seconds)

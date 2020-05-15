@@ -7,7 +7,7 @@ class Config:
             cfg = yaml.safe_load(f)
 
         self.scrape_timeout_seconds = cfg["scrape_timeout_seconds"]
-        self.enabled_plugins = cfg["enabled_plugins"]
+        self.enabled_collectors = cfg["enabled_collectors"]
         self.log_level = cfg["log_level"]
         self.log_format = cfg["log_format"]
 

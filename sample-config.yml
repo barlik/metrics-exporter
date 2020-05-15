@@ -1,5 +1,5 @@
 scrape_timeout_seconds: 60
-enabled_plugins:
+enabled_collectors:
 - sample
 
 log_level: INFO  # DEBUG/INFO/WARNING/ERROR/CRITICAL

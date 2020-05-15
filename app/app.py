@@ -14,39 +14,37 @@ from prometheus_client.core import REGISTRY
 import config
 from utils.threadpool import ThreadPoolExecutorDumpStacktrace as Executor
 
-cfg = None
-plugins = None
-plugins_dir = "plugins"
+collectors_dir = "collectors"
 log = logging.getLogger()
 
 exceptions = Counter(
-    name="exceptions",
-    documentation="Number of plugin exceptions",
-    labelnames=["plugin"],
+    name="scrape_collector_exceptions",
+    documentation="Number of collector exceptions",
+    labelnames=["collector"],
 )
 
-timeouts = Counter(
-    name="exporter_timeouts",
-    documentation="Number of plugin timeouts",
-    labelnames=["plugin"],
+success = Gauge(
+    name="scrape_collector_success",
+    documentation="Whether the collector succeeded",
+    labelnames=["collector"],
 )
 
-scrape_plugin_duration_seconds = Gauge(
-    name="scrape_plugin_duration_seconds",
-    documentation="Duration of collector plugin scrape",
-    labelnames=["plugin"],
+scrape_collector_duration_seconds = Gauge(
+    name="scrape_collector_duration_seconds",
+    documentation="Duration of collector collector scrape",
+    labelnames=["collector"],
 )
 
-loaded_plugins = Info("exporter_plugins", "Loaded plugins")
+loaded_collectors = Info("exporter_collectors", "Loaded collectors")
 
 
 class MyCollector:
     def collect(self):
         start = default_timer()
 
-        executor = Executor(max_workers=len(plugins))
+        executor = Executor(max_workers=len(collectors))
         futures = {
-            executor.submit(plugin.run): name for name, plugin in plugins.items()
+            executor.submit(collector.collect): name for name, collector in collectors.items()
         }
         try:
             for future in concurrent.futures.as_completed(
@@ -57,18 +55,21 @@ class MyCollector:
                     future.result()
                 except Exception:
                     exceptions.labels(fn_name).inc()
-                    log.error("plugin %r generated an exception", fn_name)
+                    log.error("collector %r generated an exception", fn_name)
                 else:
+                    success.labels(fn_name).set(1)
+
                     duration = max(default_timer() - start, 0)
-                    scrape_plugin_duration_seconds.labels(fn_name).set(duration)
+                    scrape_collector_duration_seconds.labels(fn_name).set(duration)
+
                     log.debug("%s finished in %.02fs", fn_name, duration)
         except concurrent.futures.TimeoutError:
             for future, fn_name in futures.items():
                 if not future.done():
-                    timeouts.labels(fn_name).inc()
-                    log.error("plugin %r timeout exceeded", fn_name)
+                    success.labels(fn_name).set(0)
+                    log.error("collector %r timeout exceeded", fn_name)
 
-        log.info("Scrape complete")
+        log.info("Scrape complete in %.02fs", default_timer() - start)
         return []
 
 
@@ -82,19 +83,19 @@ if __name__ == "__main__":
     cfg = config.config = config.Config(args.config)
     logging.basicConfig(level=cfg.log_level, format=cfg.log_format)
 
-    plugins_path = os.path.join(os.path.dirname(__file__), plugins_dir)
-    global plugins
-    plugins = {
-        name: importlib.import_module(f"{plugins_dir}.{name}")
-        for finder, name, ispkg in pkgutil.iter_modules([plugins_path])
-        if name in cfg.enabled_plugins
+    collectors_path = os.path.join(os.path.dirname(__file__), collectors_dir)
+    global collectors
+    collectors = {
+        name: importlib.import_module(f"{collectors_dir}.{name}")
+        for finder, name, ispkg in pkgutil.iter_modules([collectors_path])
+        if name in cfg.enabled_collectors
     }
-    if not plugins:
-        log.critical("No plugins enabled")
+    if not collectors:
+        log.critical("No collectors enabled")
         sys.exit(1)
-    log.info("Loaded plugins: %s", ", ".join(list(plugins)))
+    log.info("Loaded collectors: %s", ", ".join(list(collectors)))
 
-    loaded_plugins.info({plugin: "1" for plugin in plugins})
+    loaded_collectors.info({collector: "1" for collector in collectors})
 
     REGISTRY.register(MyCollector())
 
